@@ -1,25 +1,13 @@
 bson==0.4.6
 cycler==0.10.0
-Django==1.10.3
-djangorestframework==3.5.3
-elasticsearch==5.0.1
-elasticsearch-dsl==5.0.0
-matplotlib==2.0.2
-numpy==1.13.1
-peewee==2.8.5
--e git+https://github.com/danbarrese/pyfu.git@4ea4097357eff19b7d3e207eb24ba946e4ee740e#egg=pyfu
-PyMySQL==0.7.9
 pyparsing==2.2.0
 pytailf==1.1
 python-dateutil==2.6.0
 pytz==2016.10
-PyYAML==3.12
 requests==2.12.1
-ruamel.yaml==0.15.22
 six==1.10.0
 sqlparse==0.2.2
 tailhead==1.0.2
--e git+https://dbarrese@bitbucket.trustwave.com/scm/~dbarrese/twpyfu.git@6f279ead6b564a2acdef32adaee79b82fa50bfb4#egg=twpyfu
 urllib3==1.19.1
 virtualenv==15.0.1
 wget==3.2

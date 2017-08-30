@@ -5,7 +5,8 @@ import os
 import requests
 import time
 
-from pyfu import ioutils, mvnrepo
+from pyfu import ioutils
+from pyfu import nexus as mvnrepo
 from pyfu.util import props
 
 __author__ = 'Dan Barrese'
@@ -21,8 +22,10 @@ class jenkins_endpoint:
     LAST_BUILD_OUTPUT = '/lastBuild/logText/progressiveText'
 
 
-base_url = props.get_or_die('jenkins.url')
-default_group_id = props.get('mvnrepo.default-group-id', None)
+BASE_JENKINS_URL = props.get_or_die('jenkins.url')
+if not BASE_JENKINS_URL.endswith('/'):
+    BASE_JENKINS_URL += '/'
+DEFAULT_GROUP_ID = props.get('mvnrepo.default-group-id', None)
 
 
 def make_release_dev_versions(current_version):
@@ -53,17 +56,17 @@ def _curl_text(url):
 
 
 def api_log(project_name):
-    url = base_url + project_name + jenkins_endpoint.LAST_BUILD_OUTPUT
+    url = BASE_JENKINS_URL + project_name + jenkins_endpoint.LAST_BUILD_OUTPUT
     [status, response] = _curl_text(url)
     return response
 
 
 def api_get(project_name, action):
-    return _curl(base_url + project_name + action)
+    return _curl(BASE_JENKINS_URL + project_name + action)
 
 
 def api_post(project_name, action, params=''):
-    url = base_url + project_name + action
+    url = BASE_JENKINS_URL + project_name + action
     requests.post(url=url, params=params)
 
 
@@ -145,7 +148,7 @@ parser.add_argument('-a', type=str, nargs=1, required=False,
                     dest='aid', default=[None],
                     help='Artifact ID, for retrieving new build numbers automatically.')
 parser.add_argument('-g', type=str, nargs=1, required=False,
-                    dest='gid', default=[default_group_id],
+                    dest='gid', default=[DEFAULT_GROUP_ID],
                     help='Group ID, for retrieving new build numbers automatically.')
 parser.add_argument('--branch', type=str, nargs=1, required=False, dest='branch', default=['develop'],
                     help='branchName build parameter')
@@ -204,8 +207,8 @@ if release and not release_version:
 
 # initialize log directory
 home_dir = os.path.expanduser("~")
-if not os.path.exists('{home_dir}/.pyfu'):
-    os.mkdir('{home_dir}/.pyfu')
+if not os.path.exists('{home_dir}/.pyfu'.format(**locals())):
+    os.mkdir('{home_dir}/.pyfu'.format(**locals()))
 
 # get previous build number
 # make sure build is not in progress

@@ -40,6 +40,6 @@ def get_as_nested_map():
 
 def get_or_die(key):
     if key not in properties:
-        print("key '{}' not found in properties file '{}'".format(key, properties_file_path))
+        print("A property named '{}' was not found in the properties file located at '{}'.  You will have to add it yourself.  End of line.".format(key, properties_file_path))
         exit(1)
     return properties[key]
