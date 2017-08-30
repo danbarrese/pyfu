@@ -1,0 +1,10 @@
+*~
+*.swp
+.idea
+*.iml
+env/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.egg-info/
