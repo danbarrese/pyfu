@@ -20,6 +20,38 @@ class Technicolor:
     ITALIC = '\033[3m'
     UNDERLINE = '\033[4m'
 
+    @staticmethod
+    def from_string(color):
+        c = color.lower()
+        if c == 'gray':
+            return Technicolor.GRAY
+        elif c == 'grey':
+            return Technicolor.GREY
+        elif c == 'blue':
+            return Technicolor.OKBLUE
+        elif c == 'green':
+            return Technicolor.OKGREEN
+        elif c == 'yellow':
+            return Technicolor.WARNING
+        elif c == 'warn':
+            return Technicolor.WARNING
+        elif c == 'error':
+            return Technicolor.FAIL
+        elif c == 'bold':
+            return Technicolor.BOLD
+        elif c == 'italic':
+            return Technicolor.ITALIC
+        elif c == 'underline':
+            return Technicolor.UNDERLINE
+        else:
+            return ''
+
+
+def highlight(haystack, needle, color=Technicolor.OKBLUE):
+    if needle in haystack:
+        haystack = haystack.replace(needle, color + needle + Technicolor.ENDC)
+    return haystack
+
 
 def putc(text='', color=None, bold=False, italic=False, underline=False):
     prefix = ''
