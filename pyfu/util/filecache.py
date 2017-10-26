@@ -16,6 +16,8 @@ timeout_sec = int(props.get('filecache.timeout.sec', 60 * 10))
 def available(filename):
     if not filename:
         return False
+    if timeout_sec <= 0:
+        return False
     try:
         path = os.path.expanduser("~") + '/.pyfu/cache/' + filename
         modified = os.path.getmtime(path)
