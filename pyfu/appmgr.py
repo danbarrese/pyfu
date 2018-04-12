@@ -78,7 +78,7 @@ class Server(object):
         if self.type == 'springboot':
             return self.executable
         else:
-            webapps = subprocess.Popen('ls -1 ' + self.path + 'webapps |grep war |sort', stdout=subprocess.PIPE,
+            webapps = subprocess.Popen('ls -1 ' + self.path + 'webapps |grep -v "\.war" |grep -v "ROOT\|docs\|examples\|host-manager\|manager" |sort', stdout=subprocess.PIPE,
                                        shell=True).stdout.read().decode('utf8').strip()
             return '(none)' if not webapps else webapps
 

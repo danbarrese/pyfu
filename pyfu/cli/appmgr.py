@@ -40,7 +40,10 @@ for name, args in appmgr_props.items():
     if name == 'gateway':
         all_servers.append(Gateway(name=name, **args))
     else:
-        all_servers.append(appmgr.Server(name=name, **args))
+        if args['type'] == 'tomcat':
+            all_servers.append(appmgr.Tomcat(name=name, **args))
+        else:
+            all_servers.append(appmgr.Server(name=name, **args))
 
 parser = argparse.ArgumentParser(description='App Manager (supply single arg of "help")')
 args, unknown_args = parser.parse_known_args()
