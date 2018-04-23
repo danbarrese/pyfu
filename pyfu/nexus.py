@@ -16,8 +16,8 @@ from pyfu.util import props
 __author__ = 'Dan Barrese'
 __pythonver__ = '3.5'
 
-NEXUS_URL = props.get_or_die('mvnrepo.url').rstrip('/')
-DEFAULT_GROUP_ID = props.get('mvnrepo.default-group-id', None)
+NEXUS_URL = props.get_or_die(key='mvnrepo.url').rstrip('/')
+DEFAULT_GROUP_ID = props.get(key='mvnrepo.default-group-id', default=None)
 
 
 class Jsonify(object):

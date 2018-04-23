@@ -1,9 +1,12 @@
 import sys
+import os
+from sys import exit
 
 from pyfu.util import props
 from pyfu.ui import ui
 
-properties = props.get_as_nested_map().get('dashboard', None)
+properties_path = os.path.expanduser("~") + '/.dashboard/dashboard.properties'
+properties = props.get_as_nested_map(properties_path).get('dashboard', None)
 
 if len(sys.argv) == 1:
     dashboards = []

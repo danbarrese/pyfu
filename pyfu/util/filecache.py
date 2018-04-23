@@ -10,7 +10,7 @@ from pyfu.util import props
 __author__ = 'Dan Barrese'
 __pythonver__ = '3.5'
 
-timeout_sec = int(props.get('filecache.timeout.sec', 60 * 10))
+timeout_sec = int(props.get(key='filecache.timeout.sec', default=60 * 10))
 
 
 def available(filename):

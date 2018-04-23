@@ -1,6 +1,7 @@
 import argparse
 import os
 import subprocess
+from sys import exit
 
 from pyfu.appmgr import Server
 from pyfu import ioutils
