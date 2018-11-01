@@ -6,6 +6,30 @@ import os
 import datetime
 import time
 from sys import exit
+import threading
+
+# synchronized across ALL instances of a class.
+# http://theorangeduck.com/page/synchronized-python
+def synchronized(func):
+    func.__lock__ = threading.Lock()
+    def synced_func(*args, **kws):
+        with func.__lock__:
+            return func(*args, **kws)
+    return synced_func
+
+# synchornized within EACH instance of a class.
+# http://theorangeduck.com/page/synchronized-python
+def synchronized_method(method):
+    outer_lock = threading.Lock()
+    lock_name = "__"+method.__name__+"_lock"+"__"
+
+    def sync_method(self, *args, **kws):
+        with outer_lock:
+            if not hasattr(self, lock_name): setattr(self, lock_name, threading.Lock())
+            lock = getattr(self, lock_name)
+            with lock:
+                return method(self, *args, **kws)
+    return sync_method
 
 
 class Color(object):
@@ -48,6 +72,7 @@ class Box(object):
     def __init__(
             self,
             termbox,
+            dashboard,
             col=0,
             row=0,
             end_row=150,
@@ -58,6 +83,7 @@ class Box(object):
             bg=Color.DEFAULT
     ):
         self.termbox = termbox
+        self.dashboard = dashboard
         self.col = col
         self.row = row
         if self.col > 1:
@@ -84,6 +110,7 @@ class Box(object):
         self.status = None
         self.id = None
         self.last_content_row = 0
+        self.row_index = 0
 
     def draw(self):
         self.draw_borders()
@@ -97,11 +124,10 @@ class Box(object):
         self.row_char = self.blank_char
         self.intersection_char = self.blank_char
 
-    def redraw(self, row):
-        self.row = row
+    def redraw(self):
+        self.row = self.dashboard.get_starting_row(self.row_index)
         self.rewrite()
         self.reset_border()
-        return self.calc_dyn_bottom_border_row() + 1
 
     def rewrite(self):
         self.write(self.contents)
@@ -166,9 +192,12 @@ class Box(object):
 
     def calc_dyn_bottom_border_row(self):
         if self.last_content_row == 0:
-            return self.end_row
+            return self.row
         else:
             return self.last_content_row + 1
+
+    def calc_height(self):
+        return self.calc_dyn_bottom_border_row() - self.row + 1
 
     def draw_borders(self):
         # draw rows ---
@@ -223,8 +252,7 @@ class Box(object):
             self.write_status('{} - took {} - next in {}'.format(now.strftime('%H:%M:%S'), took, self.refresh_rate))
         self.redraw_border()
         last_row_after = self.calc_dyn_bottom_border_row()
-        self.termbox.present()
-        return last_row_before == last_row_after
+        self.dashboard.redraw(self.termbox)
 
     def _refresh_and_reschedule(self):
         do_cache = False
@@ -256,39 +284,50 @@ class Dashboard(object):
         else:
             self.max_col = int(self.properties['width'])
             self.max_row = int(self.properties['height'])
-        self.current_row = 0
         self.current_col = 0
-        self.longest_row = 0
         self.boxes = []
         self.current_box = -1
+        self.row_heights = []
 
+    @synchronized_method
     def redraw(self, termbox):
-        row = 0
-        last_row = row
         termbox.clear()
         for box in self.boxes:
-            if box.col > 0:
-                row = box.redraw(last_row)
-            else:
-                last_row = row
-                row = box.redraw(row)
-            termbox.present()
+            box.redraw()
+        termbox.present()
 
     def add_box(self, termbox, width, height):
         if width > self.max_col:
             raise Exception("width of box ({width}) cannot be wider than max_row: {self.max_row}".format(**locals()))
         if height > self.max_row:
             raise Exception("height of box ({height}) cannot be higher than max_col: {self.max_col}".format(**locals()))
+        if not self.row_heights:
+            self.row_heights.append(height)
         if self.current_col + width > self.max_col:
+            self.row_heights.append(height)
             self.current_col = 0
-            self.current_row = self.longest_row + 1
-        box = Box(termbox, col=self.current_col, end_col=self.current_col + width - 1, row=self.current_row,
-                  end_row=self.current_row + height - 1)
+        box = Box(termbox, self, col=self.current_col, end_col=self.current_col + width - 1)
+        box.row_index = len(self.row_heights) - 1
         self.current_col += width + 1
-        if self.current_row + height > self.longest_row:
-            self.longest_row = self.current_row + height
         self.boxes.append(box)
         return box
+
+    def row_height(self, row_index):
+        max = 0
+        for box in self.boxes:
+            if box.row_index == row_index:
+                height = box.calc_height()
+                if height > max:
+                    max = height
+        return max
+
+    def get_starting_row(self, row_index):
+        if row_index == 0:
+            return 0
+        starting_row = 0
+        for i in range(0, row_index):
+            starting_row += self.row_height(i)
+        return starting_row
 
     def current(self):
         if self.current_box == -1:
@@ -374,10 +413,7 @@ class Dashboard(object):
                             box = self.current()
                             box.clear()
                             box.write("loading...")
-                            termbox.present()
-                            redraw = box.refresh()
-                            if redraw:
-                                self.redraw(termbox)
+                            box.refresh()
                         elif ch == 'j':
                             self.current().reset_border()
                             nex = self.next()
