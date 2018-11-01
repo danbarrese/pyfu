@@ -4,277 +4,267 @@ import json
 import os
 import requests
 import time
+from sys import exit
 
 from pyfu import ioutils
-from pyfu import nexus as mvnrepo
 from pyfu.util import props
 
 __author__ = 'Dan Barrese'
 __pythonver__ = '3.5'
 
 
-class jenkins_endpoint:
-    """ Available Jenkins endpoints. """
+def log(s):
+    print(s)
+
+
+class BuildResult(object):
+    def __init__(self, success, groupId, artifactId, version):
+        self.success = success
+        self.groupId = groupId
+        self.artifactId = artifactId
+        self.version = version
+
+
+class JenkinsProject(object):
     LAST_BUILD = '/lastBuild/api/json'
     BUILD = '/build?delay=0sec'
     M2RELEASE = '/m2release/submit'
     MVN_ARTIFACTS = '/lastBuild/mavenArtifacts/api/json'
     LAST_BUILD_OUTPUT = '/lastBuild/logText/progressiveText'
+    params = {'parameter': {}}
 
+    def __init__(self, baseUrl, name):
+        self.baseUrl = baseUrl
+        self.name = name
 
-BASE_JENKINS_URL = props.get_or_die('jenkins.url')
-if not BASE_JENKINS_URL.endswith('/'):
-    BASE_JENKINS_URL += '/'
-DEFAULT_GROUP_ID = props.get('mvnrepo.default-group-id', None)
+    def isBuildInProgress(self):
+        [status, response] = self.lastBuild()
+        if status == 404:
+            raise Exception("Jenkins project not found.")
+        return response['building']
 
+    def lastBuildNumber(self):
+        [status, response] = self.lastBuild()
+        if status == 404:
+            raise Exception("Jenkins project not found.")
+        return response['number']
 
-def make_release_dev_versions(current_version):
-    vtokens = current_version.split('.')
-    vtokens[-1] = str(int(vtokens[-1]) + 1)
-    release_version = '.'.join(vtokens)
-    vtokens[-1] = str(int(vtokens[-1]) + 1) + '-SNAPSHOT'
-    development_version = '.'.join(vtokens)
-    return release_version, development_version
+    def lastBuild(self):
+        return self._apiGet(projectName, self.LAST_BUILD)
 
+    def addParam(self, name, value):
+        j = {'name': name, 'value': value}
+        if not self.params:
+            self.params = {}
+        if not self.params['parameter']:
+            self.params['parameter'] = []
+        self.params['parameter'].append(j)
 
-def _curl(url):
-    resp = requests.get(url)
-    resp_status = resp.status_code
-    resp_text = json.loads("{}")
-    if resp.ok:
-        resp_text = json.loads(resp.text)
-    return resp_status, resp_text
+    def buildSnapshot(self):
+        buildParams = '&json=' + json.dumps(self.params)
+        url = self.baseUrl + self.name + self.BUILD
+        requests.post(url=url, params=buildParams)
 
-
-def _curl_text(url):
-    resp = requests.get(url)
-    resp_status = resp.status_code
-    resp_text = ''
-    if resp.ok:
-        resp_text = resp.text
-    return resp_status, resp_text
-
-
-def api_log(project_name):
-    url = BASE_JENKINS_URL + project_name + jenkins_endpoint.LAST_BUILD_OUTPUT
-    [status, response] = _curl_text(url)
-    return response
-
-
-def api_get(project_name, action):
-    return _curl(BASE_JENKINS_URL + project_name + action)
-
-
-def api_post(project_name, action, params=''):
-    url = BASE_JENKINS_URL + project_name + action
-    requests.post(url=url, params=params)
-
-
-def await_job_start(project_name, old_build_number, delay=1.0):
-    """ Polls url looking for a different build number. """
-    new_build_number = old_build_number
-    while new_build_number == old_build_number:
-        time.sleep(delay)
-        [status, response] = api_get(project_name, jenkins_endpoint.LAST_BUILD)
-        if status != 404:
-            new_build_number = response['number']
-    return new_build_number
-
-
-def await_job_complete(project_name, build_num=0, delay=10.0, taillog=False):
-    """ Polls project's API looking for the last build to be complete. """
-    home_dir = os.path.expanduser("~")
-    if build_num is 0:
-        with open("{home_dir}/.pyfu/jenkins/{project_name}.{build_num}".format(**locals()), 'w+') as log_file:
-            log_file.write("")
-    line = 0
-    build_in_progress = True
-    while build_in_progress:
-        time.sleep(delay)
-        [status, response] = api_get(project_name, jenkins_endpoint.LAST_BUILD)
-        if status != 404:
-            build_in_progress = response['building']
-        log = api_log(project_name)
-        lines = log.splitlines()
-        new_lines = lines[line:]
-        line = len(lines)
-        if len(new_lines) > 0:
-            new_output = '\n'.join(new_lines)
-            if taillog:
-                ioutils.putc(new_output, color='gray', italic=True)
-            with open("{home_dir}/.pyfu/jenkins/{project_name}.{build_num}".format(**locals()), 'a+') as log_file:
-                log_file.write(new_output + '\n')
-
-
-def perform_build(project_name, branch):
-    j = {'parameter': {'name': 'branchName', 'value': branch}}
-    release_params = '&json=' + json.dumps(j)
-    api_post(project_name, jenkins_endpoint.BUILD, params=release_params)
-
-
-def perform_m2release(project_name, branch, release_version=None, dev_version=None):
-    release_params = ""
-    if dev_version:
-        release_params = 'versioningMode=specify_version'
-        release_params += '&releaseVersion=' + release_version
-        release_params += '&developmentVersion=' + dev_version
-        release_params += '&scmUsername='
-        release_params += '&scmPassword='
-        release_params += '&scmCommentPrefix=[maven-release-plugin]'
+    def release(self, releaseVersion, branch='develop'):
+        devVersion = self._nextSnapshotVersion(releaseVersion)
+        releaseParams = 'versioningMode=specify_version'
+        releaseParams += '&releaseVersion=' + releaseVersion
+        releaseParams += '&developmentVersion=' + devVersion
+        releaseParams += '&scmUsername='
+        releaseParams += '&scmPassword='
+        releaseParams += '&scmCommentPrefix=[maven-release-plugin]'
         if branch:
-            release_params += '&name=branchName'
-            release_params += '&value=' + branch
-        release_params += '&Submit=Schedule Maven Release Build'
-        j = {'releaseVersion': release_version, 'developmentVersion': dev_version, 'isDryRun': False}
+            releaseParams += '&name=branchName'
+            releaseParams += '&value=' + branch
+        releaseParams += '&Submit=Schedule Maven Release Build'
+        j = {'releaseVersion': releaseVersion, 'developmentVersion': devVersion, 'isDryRun': False}
         if branch:
             j['parameter'] = {}
             j['parameter']['name'] = 'branchName'
             j['parameter']['value'] = branch
-        release_params += '&json=' + json.dumps(j)
-    else:
-        release_params = 'versioningMode=auto'
-    api_post(project_name, jenkins_endpoint.M2RELEASE, params=release_params)
+        releaseParams += '&json=' + json.dumps(j)
+        log(devVersion)
+        log(releaseParams)
+        raise Exception("releases are disabled until I implement default release parameters")
+        self._apiPost(projectName, self.M2RELEASE, params=releaseParams)
 
+    def awaitJobStart(self, projectName, oldBuildNumber, delay=1.0):
+        """ Polls url looking for a different build number. """
+        newBuildNumber = oldBuildNumber
+        while newBuildNumber == oldBuildNumber:
+            time.sleep(delay)
+            [status, response] = self._apiGet(projectName, self.LAST_BUILD)
+            if status != 404:
+                newBuildNumber = response['number']
+        return newBuildNumber
+
+    def awaitJobComplete(self, projectName, buildNum=0, delay=10.0, taillog=False):
+        """ Polls project's API looking for the last build to be complete. """
+        homeDir = os.path.expanduser("~")
+        if buildNum is 0:
+            with open("{homeDir}/.pyfu/jenkins/{projectName}.{buildNum}".format(**locals()), 'w+') as logFile:
+                logFile.write("")
+        line = 0
+        buildInProgress = True
+        while buildInProgress:
+            time.sleep(delay)
+            [status, response] = self._apiGet(projectName, self.LAST_BUILD)
+            if status != 404:
+                buildInProgress = response['building']
+            log = self._apiLog(projectName)
+            lines = log.splitlines()
+            newLines = lines[line:]
+            line = len(lines)
+            if len(newLines) > 0:
+                newOutput = '\n'.join(newLines)
+                if taillog:
+                    ioutils.putc(newOutput, color='gray', italic=True)
+                with open("{homeDir}/.pyfu/jenkins/{projectName}.{buildNum}".format(**locals()), 'a+') as logFile:
+                    logFile.write(newOutput + '\n')
+
+        [status, response] = self._apiGet(projectName, self.LAST_BUILD)
+        result = response['result']
+        success = result.upper() == 'SUCCESS'
+        groupId = None
+        artifactId = None
+        version = None
+
+        if success:
+            [status, response] = self._apiGet(projectName, self.MVN_ARTIFACTS)
+            artifactId = response['moduleRecords'][0]['mainArtifact']['artifactId']
+            groupId = response['moduleRecords'][0]['mainArtifact']['groupId']
+
+            response = self._apiLog(projectName).splitlines()
+            version = "(?)"
+            for line in response:
+                if "Installing" in line:
+                    v = line
+                    v = line[0:line.rfind("/")]
+                    v = v[v.rfind("/") + 1:len(v)]
+                    version = v
+                    break
+        return BuildResult(success=success, groupId=groupId, artifactId=artifactId, version=version)
+
+    def _curl(self, url):
+        resp = requests.get(url)
+        respStatus = resp.status_code
+        respText = json.loads("{}")
+        if resp.ok:
+            respText = json.loads(resp.text)
+        return respStatus, respText
+
+    def _curlText(self, url):
+        resp = requests.get(url)
+        respStatus = resp.status_code
+        respText = ''
+        if resp.ok:
+            respText = resp.text
+        return respStatus, respText
+
+    def _apiLog(self, projectName):
+        url = self.baseUrl + projectName + self.LAST_BUILD_OUTPUT
+        [status, response] = self._curlText(url)
+        return response
+
+    def _apiGet(self, projectName, action):
+        return self._curl(self.baseUrl + projectName + action)
+
+    def _apiPost(self, projectName, action, params=''):
+        url = BASE_JENKINS_URL + projectName + action
+        requests.post(url=url, params=params)
+
+    def _nextSnapshotVersion(self, releaseVersion):
+        vtokens = releaseVersion.split('.')
+        vtokens[-1] = str(int(vtokens[-1]) + 1) + '-SNAPSHOT'
+        nextSnapshotVersion = '.'.join(vtokens)
+        return nextSnapshotVersion
+
+    def _autoGetNextReleaseVersions(self, current_version):
+        vtokens = current_version.split('.')
+        vtokens[-1] = str(int(vtokens[-1]) + 1)
+        releaseVersion = '.'.join(vtokens)
+        vtokens[-1] = str(int(vtokens[-1]) + 1) + '-SNAPSHOT'
+        devVersion = '.'.join(vtokens)
+        return releaseVersion, devVersion
+
+
+BASE_JENKINS_URL = props.get_or_die(key='jenkins.url')
+if not BASE_JENKINS_URL.endswith('/'):
+    BASE_JENKINS_URL += '/'
+DEFAULT_GROUP_ID = props.get(key='mvnrepo.default-group-id', default=None)
 
 parser = argparse.ArgumentParser(description='Automate Jenkins build server build02 via REST API')
 parser.add_argument('-p', type=str, nargs=1, required=True,
-                    dest='project_name', default=[None],
+                    dest='projectName', default=[None],
                     help='Jenkins project name.')
-parser.add_argument('--mvntree', dest='mvntree', action='store_true', default=False,
-                    help='Show project dependencies after build/release.')
-parser.add_argument('-l', dest='show_log', action='store_true', default=False,
+parser.add_argument('-l', dest='showLog', action='store_true', default=False,
                     help='Poll output log of Jenkins job.')
-parser.add_argument('-a', type=str, nargs=1, required=False,
-                    dest='aid', default=[None],
-                    help='Artifact ID, for retrieving new build numbers automatically.')
-parser.add_argument('-g', type=str, nargs=1, required=False,
-                    dest='gid', default=[DEFAULT_GROUP_ID],
-                    help='Group ID, for retrieving new build numbers automatically.')
 parser.add_argument('--branch', type=str, nargs=1, required=False, dest='branch', default=['develop'],
                     help='branchName build parameter')
-build_release = parser.add_mutually_exclusive_group()
-build_release.add_argument('-b', dest='build', action='store_true', help='Build project')
-build_release.add_argument('-r', dest='release', action='store_true', help='Release project')
-build_release.set_defaults(boolean=False)
-build_release.required = True
-version_group = parser.add_argument_group()
-version_group.add_argument('--v1', metavar='RELEASE_VERSION', type=str, nargs=1, required=False,
-                           dest='release_version', default=[None],
-                           help='Release version.  Only applicable if doing release.')
-version_group.add_argument('--v2', metavar='DEV_VERSION', type=str, nargs=1, required=False,
-                           dest='dev_version', default=[None],
-                           help='Development version.  Only applicable if doing release.')
-version_group.required = False
+buildRelease = parser.add_mutually_exclusive_group()
+buildRelease.add_argument('-b', dest='build', action='store_true', help='Build project')
+buildRelease.add_argument('-r', dest='release', action='store_true', help='Release project')
+buildRelease.set_defaults(boolean=False)
+buildRelease.required = True
+versionGroup = parser.add_argument_group()
+versionGroup.add_argument('-v', metavar='RELEASE_VERSION', type=str, nargs=1, required=False,
+                          dest='releaseVersion', default=[None],
+                          help='Release version.  Only applicable if doing release.')
+versionGroup.required = False
 args = parser.parse_args()
-project_name = args.project_name[0]
+projectName = args.projectName[0]
 build = args.build
 release = args.release
-release_version = args.release_version[0]
-dev_version = args.dev_version[0]
-do_mvntree = args.mvntree
-show_log = args.show_log
-gid = args.gid[0]
-aid = args.aid[0]
+releaseVersion = args.releaseVersion[0]
+showLog = args.showLog
 branch = args.branch[0]
 
-if not project_name:
+if not projectName:
     ioutils.putc("[ FAIL ] Project name cannot be empty", color='red', bold=True)
     exit(1)
 
-if release and (bool(release_version) != bool(dev_version)):
-    ioutils.putc("[ FAIL ] If you supply a release version or dev version, you must supply both.", color='red',
-                 bold=True)
+if release and not releaseVersion:
+    ioutils.putc("[ FAIL ] If you want to release, you must specify a version.", color='red', bold=True)
     exit(1)
-
-if release and not aid and (not bool(release_version) or not bool(dev_version)):
-    ioutils.putc(
-        "[ FAIL ] If you don't supply release/dev versions, you must supply an artifactId so I can figure out the next version to release.",
-        color='red', bold=True)
-    exit(1)
-
-if release and not release_version:
-    ver = None
-    try:
-        ver = mvnrepo.latest_version(group_id=gid, artifact_id=aid)
-    except FileNotFoundError as e:
-        ioutils.putc(
-            "[ FAIL ] The artifactId you supplied can't be found in Nexus.  Maybe try also providing the groupId?",
-            color='red', bold=True)
-        exit(1)
-    release_version, dev_version = make_release_dev_versions(ver)
-    print('Current version of {gid}.{aid} is {ver}'.format(**locals()))
-    print('Releasing version {release_version}'.format(**locals()))
 
 # initialize log directory
-home_dir = os.path.expanduser("~")
-if not os.path.exists('{home_dir}/.pyfu'.format(**locals())):
-    os.mkdir('{home_dir}/.pyfu'.format(**locals()))
+homeDir = os.path.expanduser("~")
+if not os.path.exists('{homeDir}/.pyfu'.format(**locals())):
+    os.mkdir('{homeDir}/.pyfu'.format(**locals()))
 
-# get previous build number
+jenkinsProject = JenkinsProject(baseUrl=BASE_JENKINS_URL, name=projectName)
+
 # make sure build is not in progress
-print("Getting previous build number.")
-previous_build_number = 0
-[status, response] = api_get(project_name, jenkins_endpoint.LAST_BUILD)
-build_in_progress = False
-if status != 404:
-    build_in_progress = response['building']
-    previous_build_number = response['number']
-if build_in_progress:
+log("Getting previous build number.")
+if jenkinsProject.isBuildInProgress():
     ioutils.putc("[ FAIL ] Build is already in progress!", color='red', bold=True)
     exit(1)
 
+# get previous build number
+previousBuildNumber = jenkinsProject.lastBuildNumber()
+
+# set params
+jenkinsProject.addParam(name="branchName", value=branch)
+
 if build:
-    print("Building {project_name}.".format(**locals()))
-    perform_build(project_name=project_name, branch=branch)
+    log("Building {projectName}.".format(**locals()))
+    jenkinsProject.buildSnapshot()
 elif release:
-    print("Releasing {project_name}.".format(**locals()))
-    perform_m2release(project_name=project_name, release_version=release_version, dev_version=dev_version,
-                      branch=branch)
+    log("Releasing {projectName}.".format(**locals()))
+    jenkinsProject.release(releaseVersion)
 
-print("Waiting for job to start.")
-build_num = await_job_start(project_name, previous_build_number)
-print("Job started.  Waiting for job to complete.")
-await_job_complete(project_name, build_num=build_num, taillog=show_log)
+log("Waiting for job to start.")
+buildNum = jenkinsProject.awaitJobStart(projectName, previousBuildNumber)
+log("Job started.  Waiting for job to complete.")
+buildResult = jenkinsProject.awaitJobComplete(projectName, buildNum=buildNum, taillog=showLog)
 
-# job is done, was it successful?
-print("Job is done.  Getting results.")
-[status, response] = api_get(project_name, jenkins_endpoint.LAST_BUILD)
-result = response['result']
-success = result.upper() == 'SUCCESS'
-last_build_results = response
-
-if success:
-    [status, response] = api_get(project_name, jenkins_endpoint.MVN_ARTIFACTS)
-    artifact_id = response['moduleRecords'][0]['mainArtifact']['artifactId']
-    group_id = response['moduleRecords'][0]['mainArtifact']['groupId']
-
-    response = api_log(project_name).splitlines()
-    version = "(?)"
-    for line in response:
-        if "Installing" in line:
-            v = line
-            v = line[0:line.rfind("/")]
-            v = v[v.rfind("/") + 1:len(v)]
-            version = v
-            break
-    result = '[ OK ] {group_id} {artifact_id} {version} released'.format(**locals())
+if buildResult.success:
+    result = '[ OK ] {buildResult.groupId} {buildResult.artifactId} {buildResult.version} released'.format(**locals())
     ioutils.putc(result, color='green', bold=True)
-    with open("{home_dir}/.pyfu/jenkins/all.log".format(**locals()), 'a+') as log_file:
-        log_file.write(result + '\n')
-
-    # get artifact dependency tree for the project
-    if do_mvntree:
-        print("Building MVN dependency tree.")
-        try:
-            svn_url = last_build_results['changeSet']['revisions'][0]['module']
-            # TODO: need to make a mvntree module.
-            mvntree = os.popen("mvntree -s {svn_url}".format(**locals())).read()
-            print(str(mvntree))
-        except Exception as e:
-            print("Could not build mvntree.")
-            pass
+    with open("{homeDir}/.pyfu/jenkins/all.log".format(**locals()), 'a+') as logFile:
+        logFile.write(result + '\n')
 else:
-    result = '[ FAILED ] {project_name}'.format(**locals())
+    result = '[ FAILED ] {projectName}'.format(**locals())
     ioutils.putc(result, color='red', bold=True)
-    with open("{home_dir}/.pyfu/jenkins/all.log".format(**locals()), 'a+') as log_file:
-        log_file.write(str(datetime.datetime.now()) + ": " + result + '\n')
+    with open("{homeDir}/.pyfu/jenkins/all.log".format(**locals()), 'a+') as logFile:
+        logFile.write(str(datetime.datetime.now()) + ": " + result + '\n')

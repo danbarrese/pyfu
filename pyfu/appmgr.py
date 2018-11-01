@@ -115,9 +115,7 @@ class Server(object):
         else:
             if self.running():
                 self.stop()
-            # subprocess.Popen(
-            #     'rm -rf ' + artifact_path + ' ' + self.path + 'webapps/' + artifact_name[0:artifact_name.rfind(".")],
-            #     shell=True)
+            subprocess.Popen('rm -rf ' + self.path + 'webapps/' + artifact_name[0:artifact_name.rfind(".")], shell=True)
             subprocess.Popen('cp ' + artifact_path + ' ' + self.path + 'webapps/' + artifact_name, shell=True)
             while True:
                 processes = subprocess.Popen('pgrep -lf "' + self._id() + '"', stdout=subprocess.PIPE,
