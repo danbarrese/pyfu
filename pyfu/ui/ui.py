@@ -83,6 +83,7 @@ class Box(object):
         self.header = None
         self.status = None
         self.id = None
+        self.last_content_row = 0
 
     def draw(self):
         self.draw_borders()
@@ -95,6 +96,12 @@ class Box(object):
         self.col_char = self.blank_char
         self.row_char = self.blank_char
         self.intersection_char = self.blank_char
+
+    def redraw(self, row):
+        self.row = row
+        self.rewrite()
+        self.reset_border()
+        return self.calc_dyn_bottom_border_row() + 1
 
     def rewrite(self):
         self.write(self.contents)
@@ -130,6 +137,7 @@ class Box(object):
         just_encountered_newline = False
         self._write_header()
         for row in range(j, self.end_row):
+            self.last_content_row = row
             if i >= len(self.contents):
                 return
             if not self.allow_wrap and not just_encountered_newline and i > 0:
@@ -151,37 +159,44 @@ class Box(object):
             return
         i = 0
         for col in range(self.col + 2, self.end_col - 1):
-            self.termbox.change_cell(col, self.end_row, ord(self.status[i]), self.border_fg, self.bg)
+            self.termbox.change_cell(col, self.calc_dyn_bottom_border_row(), ord(self.status[i]), self.border_fg, self.bg)
             i += 1
             if i >= len(self.status):
                 return
+
+    def calc_dyn_bottom_border_row(self):
+        if self.last_content_row == 0:
+            return self.end_row
+        else:
+            return self.last_content_row + 1
 
     def draw_borders(self):
         # draw rows ---
         for col in range(self.col, self.end_col):
             self.termbox.change_cell(col, self.row, self.row_char, self.border_fg, self.border_bg)
-            self.termbox.change_cell(col, self.end_row, self.row_char, self.border_fg, self.border_bg)
+            self.termbox.change_cell(col, self.calc_dyn_bottom_border_row(), self.row_char, self.border_fg, self.border_bg)
 
         # draw columns |||
-        for row in range(self.row + 1, self.end_row):
+        for row in range(self.row + 1, self.calc_dyn_bottom_border_row()):
             self.termbox.change_cell(self.col, row, self.col_char, self.border_fg, self.border_bg)
             self.termbox.change_cell(self.end_col, row, self.col_char, self.border_fg, self.border_bg)
 
         # draw corners +++
         self.termbox.change_cell(self.col, self.row, ord('┌'), self.border_fg, self.border_bg)
         self.termbox.change_cell(self.end_col, self.row, ord('┐'), self.border_fg, self.border_bg)
-        self.termbox.change_cell(self.col, self.end_row, ord('└'), self.border_fg, self.border_bg)
-        self.termbox.change_cell(self.end_col, self.end_row, ord('┘'), self.border_fg, self.border_bg)
+        self.termbox.change_cell(self.col, self.calc_dyn_bottom_border_row(), ord('└'), self.border_fg, self.border_bg)
+        self.termbox.change_cell(self.end_col, self.calc_dyn_bottom_border_row(), ord('┘'), self.border_fg, self.border_bg)
 
     def clear(self):
         self.contents = ''
-        for row in range(self.row + 1, self.end_row):
+        for row in range(self.row + 1, self.calc_dyn_bottom_border_row()):
             for col in range(self.col + 1, self.end_col):
                 self.termbox.change_cell(col, row, self.blank_char, self.fg, self.bg)
         self._write_header()
 
     def refresh(self, use_cache=False):
         before = datetime.datetime.now()
+        last_row_before = self.calc_dyn_bottom_border_row()
 
         if use_cache:
             contents = [line.rstrip('\n') for line in open('/tmp/dashboard_' + self.id)]
@@ -207,7 +222,9 @@ class Box(object):
         else:
             self.write_status('{} - took {} - next in {}'.format(now.strftime('%H:%M:%S'), took, self.refresh_rate))
         self.redraw_border()
+        last_row_after = self.calc_dyn_bottom_border_row()
         self.termbox.present()
+        return last_row_before == last_row_after
 
     def _refresh_and_reschedule(self):
         do_cache = False
@@ -246,9 +263,15 @@ class Dashboard(object):
         self.current_box = -1
 
     def redraw(self, termbox):
+        row = 0
+        last_row = row
+        termbox.clear()
         for box in self.boxes:
-            box.rewrite()
-            box.reset_border()
+            if box.col > 0:
+                row = box.redraw(last_row)
+            else:
+                last_row = row
+                row = box.redraw(row)
             termbox.present()
 
     def add_box(self, termbox, width, height):
@@ -324,9 +347,6 @@ class Dashboard(object):
                 if 'color-content-bg' in box_props:
                     box.bg = Color.from_string(box_props['color-content-bg'])
 
-            self.draw()
-            termbox.present()
-
             # This uses a new thread to spawn all refresh threads.
             # Each refresh thread blocks the spawn thread, instead of the main thread.
             for box in self.boxes:
@@ -355,7 +375,9 @@ class Dashboard(object):
                             box.clear()
                             box.write("loading...")
                             termbox.present()
-                            box.refresh()
+                            redraw = box.refresh()
+                            if redraw:
+                                self.redraw(termbox)
                         elif ch == 'j':
                             self.current().reset_border()
                             nex = self.next()
