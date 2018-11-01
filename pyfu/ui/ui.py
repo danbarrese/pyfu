@@ -4,6 +4,7 @@ import threading
 import _thread
 import os
 import datetime
+import time
 from sys import exit
 
 
@@ -81,6 +82,7 @@ class Box(object):
         self.refresh_rate = 0
         self.header = None
         self.status = None
+        self.id = None
 
     def draw(self):
         self.draw_borders()
@@ -97,12 +99,15 @@ class Box(object):
     def rewrite(self):
         self.write(self.contents)
 
-    def reset_border(self):
-        self.border_fg = self.orig_border_fg
-        self.border_bg = self.orig_border_bg
+    def redraw_border(self):
         self.draw_borders()
         self._write_header()
         self.write_status(self.status)
+
+    def reset_border(self):
+        self.border_fg = self.orig_border_fg
+        self.border_bg = self.orig_border_bg
+        self.redraw_border()
 
     def append(self, contents):
         self.write(self.contents + contents)
@@ -175,22 +180,43 @@ class Box(object):
                 self.termbox.change_cell(col, row, self.blank_char, self.fg, self.bg)
         self._write_header()
 
-    def refresh(self):
+    def refresh(self, use_cache=False):
         before = datetime.datetime.now()
-        contents = subprocess.Popen(
-            self.refresh_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            shell=True
-        ).stdout.read().decode('utf8').strip()
+
+        if use_cache:
+            contents = [line.rstrip('\n') for line in open('/tmp/dashboard_' + self.id)]
+            contents = '\n'.join(contents)
+        else:
+            contents = subprocess.Popen(
+                self.refresh_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                shell=True
+            ).stdout.read().decode('utf8').strip()
+
+        # write to file, for caching
+        output = open('/tmp/dashboard_' + self.id, 'w')
+        output.write(contents)
+        output.close()
+
         now = datetime.datetime.now()
         self.write(contents)
         took = str(round((now - before).total_seconds(), 1))
-        self.write_status('{} - took {} - next in {}'.format(now.strftime('%H:%M:%S'), took, self.refresh_rate))
+        if use_cache:
+            self.write_status('{} - cached - next in {}'.format(now.strftime('%H:%M:%S'), self.refresh_rate))
+        else:
+            self.write_status('{} - took {} - next in {}'.format(now.strftime('%H:%M:%S'), took, self.refresh_rate))
+        self.redraw_border()
         self.termbox.present()
 
     def _refresh_and_reschedule(self):
-        self.refresh()
+        do_cache = False
+        if self.refresh_rate > 0:
+            cache_filename = '/tmp/dashboard_' + self.id
+            if os.path.isfile(cache_filename):
+                mtime = os.path.getmtime(cache_filename)
+                do_cache = mtime > (time.time() - self.refresh_rate + 5) # the +5sec is to make sure the comparison doesn't fail if there's any tiny time comparison issues.
+        self.refresh(use_cache=do_cache)
         if self.refresh_rate > 0:
             thread = threading.Timer(self.refresh_rate, self._refresh_and_reschedule)
             thread.start()
@@ -201,22 +227,29 @@ class Box(object):
 
 
 class Dashboard(object):
-    def __init__(self, properties):
-        self.properties = properties
+    def __init__(self, properties, name):
+        self.name = name
+        self.properties = properties[name]
         self.auto_size = False
-        if properties['width'] and str(properties['height']) == 'auto':
+        if self.properties['width'] and str(self.properties['height']) == 'auto':
             self.max_row, self.max_col = os.popen('stty size', 'r').read().split()
             self.max_row = int(self.max_row)
             self.max_col = int(self.max_col)
             self.auto_size = True
         else:
-            self.max_col = int(properties['width'])
-            self.max_row = int(properties['height'])
+            self.max_col = int(self.properties['width'])
+            self.max_row = int(self.properties['height'])
         self.current_row = 0
         self.current_col = 0
         self.longest_row = 0
         self.boxes = []
         self.current_box = -1
+
+    def redraw(self, termbox):
+        for box in self.boxes:
+            box.rewrite()
+            box.reset_border()
+            termbox.present()
 
     def add_box(self, termbox, width, height):
         if width > self.max_col:
@@ -274,6 +307,7 @@ class Dashboard(object):
                 box_props = self.properties['box'][k]
                 width, height = self._get_width_height(box_props, len(self.properties['box']))
                 box = self.add_box(termbox, width, height)
+                box.id = '{}_{}'.format(self.name, k)
                 if 'name' in box_props:
                     box.header = box_props['name']
                 box.refresh_cmd = box_props['cmd']
@@ -303,29 +337,26 @@ class Dashboard(object):
                 event_here = termbox.poll_event()
                 while event_here:
                     (type, ch, key, mod, w, h, x, y) = event_here
-                    if type == Termbox.EVENT_KEY:
+                    if type == Termbox.EVENT_RESIZE:
+                        self.redraw(termbox)
+                    elif type == Termbox.EVENT_KEY:
                         if key == Termbox.KEY_ESC:
                             self.current().reset_border()
-                        if key == Termbox.KEY_CTRL_C:
+                        elif key == Termbox.KEY_CTRL_C:
                             exit(0)
-                        if ch == 'R':
+                        elif ch == 'R':
                             for box in self.boxes:
                                 box.clear()
                                 box.write("loading...")
                                 termbox.present()
-                                _thread.start_new_thread(box.refresh(), ())
-                        if ch == 'r':
-                            # for box in self.boxes:
-                            #     box.clear()
-                            #     box.write("loading...")
-                            #     termbox.present()
-                            #     box.refresh()
+                                _thread.start_new_thread(box.refresh, ())
+                        elif ch == 'r':
                             box = self.current()
                             box.clear()
                             box.write("loading...")
                             termbox.present()
                             box.refresh()
-                        if ch == 'j':
+                        elif ch == 'j':
                             self.current().reset_border()
                             nex = self.next()
                             old_fg = nex.border_fg
@@ -336,7 +367,7 @@ class Dashboard(object):
                             nex.border_fg = nex.orig_border_fg
                             nex.border_bg = nex.orig_border_bg
                             nex._write_header()
-                        if ch == 'k':
+                        elif ch == 'k':
                             self.current().reset_border()
                             pre = self.previous()
                             old_fg = pre.border_fg
@@ -347,5 +378,10 @@ class Dashboard(object):
                             pre.border_fg = pre.orig_border_fg
                             pre.border_bg = pre.orig_border_bg
                             pre._write_header()
+                        elif key == Termbox.KEY_CTRL_L:
+                            self.redraw(termbox)
+                    elif type == Termbox.EVENT_MOUSE:
+                        self.current().reset_border()
+                        exit(0)
                     event_here = termbox.peek_event()
                     termbox.present()

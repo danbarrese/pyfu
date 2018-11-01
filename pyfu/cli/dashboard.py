@@ -16,5 +16,5 @@ if len(sys.argv) == 1:
     exit(1)
 
 name = sys.argv[1]
-dashboard = ui.Dashboard(properties[name])
+dashboard = ui.Dashboard(properties, name)
 dashboard.run()

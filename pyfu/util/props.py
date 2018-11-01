@@ -21,8 +21,8 @@ def __read_properties(path):
     return dict(lines)
 
 
-def __prep_properties(path):
-    if path not in all_properties:
+def __prep_properties(path, force_load=False):
+    if not force_load and path not in all_properties:
         try:
             all_properties[path] = __read_properties(path)
         except IOError as e:
@@ -34,21 +34,21 @@ all_properties = {}
 __prep_properties(default_path)
 
 
-def get(key, path=default_path, default=None):
-    __prep_properties(path)
+def get(key, path=default_path, default=None, force_load=False):
+    __prep_properties(path, force_load)
     return all_properties[path].get(key, default)
 
 
-def get_as_nested_map(path=default_path):
-    __prep_properties(path)
+def get_as_nested_map(path=default_path, force_load=False):
+    __prep_properties(path, force_load)
     nested_map = {}
     for key in all_properties[path].keys():
         maputil.add_nested(nested_map, key, all_properties[path][key])
     return nested_map
 
 
-def get_or_die(key, path=default_path):
-    __prep_properties(path)
+def get_or_die(key, path=default_path, force_load=False):
+    __prep_properties(path, force_load)
     if key not in all_properties[path]:
         print(
             "A property named '{}' was not found in the properties file located at '{}'.  You will have to add it yourself.  End of line.".format(
