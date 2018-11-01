@@ -6,7 +6,6 @@ import os
 import datetime
 import time
 from sys import exit
-import threading
 
 # synchronized across ALL instances of a class.
 # http://theorangeduck.com/page/synchronized-python
@@ -127,7 +126,7 @@ class Box(object):
     def redraw(self):
         self.row = self.dashboard.get_starting_row(self.row_index)
         self.rewrite()
-        self.reset_border()
+        self.redraw_border()
 
     def rewrite(self):
         self.write(self.contents)
@@ -141,6 +140,16 @@ class Box(object):
         self.border_fg = self.orig_border_fg
         self.border_bg = self.orig_border_bg
         self.redraw_border()
+
+    def hilight_border(self):
+        old_fg = self.border_fg
+        self.border_fg = self.border_bg
+        self.border_bg = old_fg
+        self.draw_borders()
+        self.write_status(self.status)
+        self.border_fg = self.orig_border_fg
+        self.border_bg = self.orig_border_bg
+        self._write_header()
 
     def append(self, contents):
         self.write(self.contents + contents)
@@ -225,7 +234,6 @@ class Box(object):
 
     def refresh(self, use_cache=False):
         before = datetime.datetime.now()
-        last_row_before = self.calc_dyn_bottom_border_row()
 
         if use_cache:
             contents = [line.rstrip('\n') for line in open('/tmp/dashboard_' + self.id)]
@@ -250,8 +258,6 @@ class Box(object):
             self.write_status('{} - cached - next in {}'.format(now.strftime('%H:%M:%S'), self.refresh_rate))
         else:
             self.write_status('{} - took {} - next in {}'.format(now.strftime('%H:%M:%S'), took, self.refresh_rate))
-        self.redraw_border()
-        last_row_after = self.calc_dyn_bottom_border_row()
         self.dashboard.redraw(self.termbox)
 
     def _refresh_and_reschedule(self):
@@ -274,7 +280,7 @@ class Box(object):
 class Dashboard(object):
     def __init__(self, properties, name):
         self.name = name
-        self.properties = properties[name]
+        self.properties = properties
         self.auto_size = False
         if self.properties['width'] and str(self.properties['height']) == 'auto':
             self.max_row, self.max_col = os.popen('stty size', 'r').read().split()
@@ -365,11 +371,10 @@ class Dashboard(object):
         with Termbox.Termbox() as termbox:
             termbox.clear()
 
-            for k in sorted(self.properties['box'].keys()):
-                box_props = self.properties['box'][k]
-                width, height = self._get_width_height(box_props, len(self.properties['box']))
+            for box_props in self.properties['boxes']:
+                width, height = self._get_width_height(box_props, len(self.properties['boxes']))
                 box = self.add_box(termbox, width, height)
-                box.id = '{}_{}'.format(self.name, k)
+                box.id = '{}'.format(box_props['id'])
                 if 'name' in box_props:
                     box.header = box_props['name']
                 box.refresh_cmd = box_props['cmd']
@@ -413,29 +418,15 @@ class Dashboard(object):
                             box = self.current()
                             box.clear()
                             box.write("loading...")
+                            termbox.present()
                             box.refresh()
+                            box.hilight_border()
                         elif ch == 'j':
                             self.current().reset_border()
-                            nex = self.next()
-                            old_fg = nex.border_fg
-                            nex.border_fg = nex.border_bg
-                            nex.border_bg = old_fg
-                            nex.draw_borders()
-                            nex.write_status(nex.status)
-                            nex.border_fg = nex.orig_border_fg
-                            nex.border_bg = nex.orig_border_bg
-                            nex._write_header()
+                            self.next().hilight_border()
                         elif ch == 'k':
                             self.current().reset_border()
-                            pre = self.previous()
-                            old_fg = pre.border_fg
-                            pre.border_fg = pre.border_bg
-                            pre.border_bg = old_fg
-                            pre.draw_borders()
-                            pre.write_status(pre.status)
-                            pre.border_fg = pre.orig_border_fg
-                            pre.border_bg = pre.orig_border_bg
-                            pre._write_header()
+                            self.previous().hilight_border()
                         elif key == Termbox.KEY_CTRL_L:
                             self.redraw(termbox)
                     elif type == Termbox.EVENT_MOUSE:
