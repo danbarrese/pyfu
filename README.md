@@ -3,10 +3,16 @@ Various scripts for work automation in Python 3.
 
 ## Dashboard
 
+![dashboard example screenshot](screenshots/img.png)
+
 ### Configure
 
+Dashboard leverages termbox to build a live dashboard made of various boxes of
+different sizes and colors.  The contents of each box are the output of any
+arbitrary shell command, which can be specified in the dashboard config file.
+
 Dashboard is configured by a yaml file.  Create the file:
-`~/.dashboard/dashboard.yaml` with contents:
+`~/.dashboard/dashboard.yaml` with the contents:
 
 ```
 dashboards:
