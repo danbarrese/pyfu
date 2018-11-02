@@ -44,6 +44,7 @@ This configures 1 dashboard named `foo`.
 ### Dashboard colors
 
 * white
+* gray
 * black
 * red
 * orange
@@ -51,6 +52,13 @@ This configures 1 dashboard named `foo`.
 * green
 * blue
 * magenta
-* orange
-* gray
 * any number from 1-256
+
+### Controls
+
+* `j`/`k` - select next/previous box
+* `esc` - clear selection highlighting
+* `r` - refresh selected box
+* `R` - refresh all boxes
+* `ctrl + l` - redraw all boxes
+
