@@ -3,7 +3,7 @@ Various scripts for work automation in Python 3.
 
 ## Dashboard
 
-![dashboard example screenshot](screenshots/img.png)
+![dashboard example screenshot](screenshots/dashboard.png)
 
 ### Configure
 
