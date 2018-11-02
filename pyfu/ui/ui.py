@@ -30,20 +30,31 @@ def synchronized_method(method):
                 return method(self, *args, **kws)
     return sync_method
 
+def is_number(s):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+
 
 class Color(object):
-    DEFAULT = 0
-    BLACK = 1
-    RED = 2
-    GREEN = 3
-    YELLOW = 4
-    BLUE = 5
-    MAGENTA = 6
-    CYAN = 7
-    WHITE = 8
+    DEFAULT = 234
+    BLACK = 16
+    BLUE = 4
+    CYAN = 6
+    GREEN = 2
+    MAGENTA = 5
+    ORANGE = 208
+    RED = 1
+    WHITE = 15
+    YELLOW = 3
+    GRAY = 8
 
     @staticmethod
     def from_string(color):
+        if is_number(color):
+            return color
         c = color.lower()
         if c == 'default':
             return Color.DEFAULT
@@ -63,6 +74,10 @@ class Color(object):
             return Color.CYAN
         elif c == 'white':
             return Color.WHITE
+        elif c == 'orange':
+            return Color.ORANGE
+        elif c == 'gray':
+            return Color.GRAY
         else:
             return Color.DEFAULT
 
@@ -194,7 +209,7 @@ class Box(object):
             return
         i = 0
         for col in range(self.col + 2, self.end_col - 1):
-            self.termbox.change_cell(col, self.calc_dyn_bottom_border_row(), ord(self.status[i]), self.border_fg, self.bg)
+            self.termbox.change_cell(col, self.calc_dyn_bottom_border_row(), ord(self.status[i]), self.border_fg, self.border_bg)
             i += 1
             if i >= len(self.status):
                 return
@@ -369,6 +384,7 @@ class Dashboard(object):
 
     def run(self):
         with Termbox.Termbox() as termbox:
+            termbox.select_output_mode(2)
             termbox.clear()
 
             for box_props in self.properties['boxes']:
