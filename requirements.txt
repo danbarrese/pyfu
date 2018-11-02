@@ -1,19 +1,22 @@
 altgraph==0.15
+backports.shutil-get-terminal-size==1.0.0
 certifi==2018.4.16
 chardet==3.0.4
+columnize==0.3.9
 cycler==0.10.0
 Cython==0.28.1
 future==0.16.0
 idna==2.6
 macholib==1.9
 pefile==2017.11.5
--e git+https://github.com/danbarrese/pyfu.git@63af62f0000e10647458af87e8a5cd6f463af16e#egg=pyfu
+-e git+git@github.com:danbarrese/pyfu.git@a94a9034abfda00d3f23c96b9c84dfe493e3c8fe#egg=pyfu
 PyInstaller==3.3.1
 pyparsing==2.2.0
 pytailf==1.1
 python-dateutil==2.7.2
 pytz==2018.4
-requests==2.18.4
+PyYAML==3.13
+requests==2.20.0
 six==1.11.0
 sqlparse==0.2.4
 tailhead==1.0.2
