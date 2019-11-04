@@ -31,7 +31,7 @@ def get(filename):
         return False
     try:
         path = os.path.expanduser("~") + '/.pyfu/cache/' + filename
-        lines = ''.join([line.rstrip('\n') for line in open(path)])
+        lines = '\n'.join([line.rstrip('\n') for line in open(path)])
         return lines
     except OSError as e:
         return False

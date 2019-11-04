@@ -30,6 +30,7 @@ def synchronized_method(method):
                 return method(self, *args, **kws)
     return sync_method
 
+
 def is_number(s):
     try:
         int(s)
@@ -125,6 +126,7 @@ class Box(object):
         self.id = None
         self.last_content_row = 0
         self.row_index = 0
+        self.cache_filename = None
 
     def draw(self):
         self.draw_borders()
@@ -158,13 +160,18 @@ class Box(object):
 
     def hilight_border(self):
         old_fg = self.border_fg
+        old_bg = self.border_bg
         self.border_fg = self.border_bg
         self.border_bg = old_fg
         self.draw_borders()
         self.write_status(self.status)
+
+        # switch colors back to original to write the header, then switch back to highlighted colors
         self.border_fg = self.orig_border_fg
         self.border_bg = self.orig_border_bg
         self._write_header()
+        self.border_fg = old_bg
+        self.border_bg = old_fg
 
     def append(self, contents):
         self.write(self.contents + contents)
@@ -174,7 +181,7 @@ class Box(object):
         if self.header:
             hdr = '  ' + self.header + '  '
             for col in range(self.col + 2, self.end_col):
-                self.termbox.change_cell(col, self.row, ord(hdr[i]), Color.BLACK, self.border_fg)
+                self.termbox.change_cell(col, self.row, ord(hdr[i]), self.orig_border_bg, self.orig_border_fg)
                 i += 1
                 if i >= len(hdr):
                     return
@@ -251,7 +258,7 @@ class Box(object):
         before = datetime.datetime.now()
 
         if use_cache:
-            contents = [line.rstrip('\n') for line in open('/tmp/dashboard_' + self.id)]
+            contents = [line.rstrip('\n') for line in open(self._cache_filename())]
             contents = '\n'.join(contents)
         else:
             contents = subprocess.Popen(
@@ -261,26 +268,25 @@ class Box(object):
                 shell=True
             ).stdout.read().decode('utf8').strip()
 
-        # write to file, for caching
-        output = open('/tmp/dashboard_' + self.id, 'w')
-        output.write(contents)
-        output.close()
+            # write to file, for caching
+            output = open(self._cache_filename(), 'w')
+            output.write(contents)
+            output.close()
 
-        now = datetime.datetime.now()
+        mtime = datetime.datetime.fromtimestamp(os.path.getmtime(self._cache_filename()))
         self.write(contents)
-        took = str(round((now - before).total_seconds(), 1))
         if use_cache:
-            self.write_status('{} - cached - next in {}'.format(now.strftime('%H:%M:%S'), self.refresh_rate))
+            self.write_status('{} - cached - next in {}'.format(mtime.strftime('%H:%M:%S'), self.refresh_rate))
         else:
-            self.write_status('{} - took {} - next in {}'.format(now.strftime('%H:%M:%S'), took, self.refresh_rate))
+            took = str(round((mtime - before).total_seconds(), 1))
+            self.write_status('{} - took {} - next in {}'.format(mtime.strftime('%H:%M:%S'), took, self.refresh_rate))
         self.dashboard.redraw(self.termbox)
 
     def _refresh_and_reschedule(self):
         do_cache = False
         if self.refresh_rate > 0:
-            cache_filename = '/tmp/dashboard_' + self.id
-            if os.path.isfile(cache_filename):
-                mtime = os.path.getmtime(cache_filename)
+            if os.path.isfile(self._cache_filename()):
+                mtime = os.path.getmtime(self._cache_filename())
                 do_cache = mtime > (time.time() - self.refresh_rate + 5) # the +5sec is to make sure the comparison doesn't fail if there's any tiny time comparison issues.
         self.refresh(use_cache=do_cache)
         if self.refresh_rate > 0:
@@ -290,6 +296,11 @@ class Box(object):
 
     def start_refreshing(self):
         _thread.start_new_thread(self._refresh_and_reschedule, ())
+
+    def _cache_filename(self):
+        if not self.cache_filename:
+            self.cache_filename = '/tmp/dashboard_' + self.id
+        return self.cache_filename
 
 
 class Dashboard(object):
@@ -444,6 +455,7 @@ class Dashboard(object):
                             self.current().reset_border()
                             self.previous().hilight_border()
                         elif key == Termbox.KEY_CTRL_L:
+                            self.current().reset_border()
                             self.redraw(termbox)
                     elif type == Termbox.EVENT_MOUSE:
                         self.current().reset_border()
