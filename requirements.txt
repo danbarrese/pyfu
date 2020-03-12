@@ -23,7 +23,7 @@ mccabe==0.6.1
 only==2018.11.20
 pefile==2017.11.5
 phonenumbers==8.10.14
-psutil==5.4.8
+psutil==5.6.6
 public==2018.11.20
 -e git+git@github.com:danbarrese/pyfu.git@c9d25c995922202bf803a3ff0d2140759ecc1886#egg=pyfu
 pygame==1.9.4
