@@ -36,7 +36,7 @@ pytailf==1.1
 python-dateutil==2.7.2
 python-vlc==3.0.4106
 pytz==2018.4
-PyYAML==5.1.2
+PyYAML==5.4
 requests==2.22.0
 runcmd==2018.11.20
 six==1.11.0
