@@ -27,7 +27,7 @@ psutil==5.4.8
 public==2018.11.20
 -e git+git@github.com:danbarrese/pyfu.git@c9d25c995922202bf803a3ff0d2140759ecc1886#egg=pyfu
 pygame==1.9.4
-Pygments==2.3.1
+Pygments==2.7.4
 PyInstaller==3.3.1
 pylint==2.2.2
 pyparsing==2.2.0
