@@ -45,7 +45,7 @@ tailhead==1.0.2
 temp==2018.11.20
 termbox==1.0.1a1
 typed-ast==1.1.0
-urllib3==1.25.7
+urllib3==1.26.5
 vlc==2018.11.20
 wget==3.2
 wrapt==1.10.11
